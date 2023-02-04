@@ -3,7 +3,22 @@ const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 
 const register = async (req, res) => {
-  const { username, email, password, confirmPassword } = req.body
+  const { username, email, password, confirmPassword, role } = req.body
+
+  let user = await User.findAll({
+    where: {
+      email: req.body.email
+    },
+  });
+  if (user.length) return res.status(400).json({msg: "Email already exists!"})
+
+  user = await User.findAll({
+    where: {
+      name: req.body.username
+    },
+  });
+  if (user.length) return res.status(400).json({msg: "Username already exists!"})
+
   if (password !== confirmPassword) return res.status(400).json({msg: "Password and Confirm Password does not match"})
   const salt = await bcrypt.genSalt(10)
   const hashPassword = await bcrypt.hash(password, salt)
@@ -12,7 +27,7 @@ const register = async (req, res) => {
       name: username,
       email,
       password: hashPassword,
-      role: "visitor"
+      role
     })
     res.json({msg: "Registeration Successful"});
   } catch (err) {
@@ -22,32 +37,30 @@ const register = async (req, res) => {
 
 const login = async(req, res) => {
   try {
-    console.log(req.body)
     const user = await User.findAll({
       where: {
         email: req.body.email
-      }
+      },
     });
 
     const match = await bcrypt.compare(req.body.password, user[0].password)
     if (!match) return res.status(400).json({msg: "Wrong Password"});
+    if (!user[0].approved) return res.status(403).json({msg: "Your account is under review"})
 
-    const userId = user[0].id
-    const name = user[0].name
-    const email = user[0].email
-    const accessToken = jwt.sign({ userId, name, email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15s" })
-    const refreshToken = jwt.sign({ userId, name, email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1d' })
+    const { id, name, email, role, approved } = user[0]
+    const accessToken = jwt.sign({ id, name, email, role, approved }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d' })
+    const refreshToken = jwt.sign({ id, name, email, role, approved }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1d' })
     
     await User.update({ refresh_token: refreshToken }, {
       where: {
-        id: userId
+        id
       }
     })
     res.cookie('refreshToken', refreshToken, {
       maxAge: 24 * 60 * 60 * 1000
     })
 
-    return res.json({ accessToken, refreshToken, user })
+    return res.json({ accessToken, refreshToken })
   } catch (err) {
     res.status(404).json({ msg: "Email not found" })
   }
@@ -73,4 +86,25 @@ const logout = async (req, res) => {
   return res.sendStatus(200)
 }
 
-module.exports = { login, logout, register }
+const allUsers = async (req, res) => {
+  const users = await User.findAll({ attributes: ["id", "name", "email", "role", "approved", "createdAt"] })
+  return res.json({users})
+}
+
+const approveUser = async (req, res) => {
+  const user = await User.findAll({
+    where: {
+      id: req.body.id
+    }
+  })
+
+  await User.update({ approved: 1 - user[0].approved }, {
+    where: {
+      id: req.body.id
+    }
+  })
+
+  return res.json({msg: "Successful"})
+}
+
+module.exports = { login, logout, register, allUsers, allUsers, approveUser }
