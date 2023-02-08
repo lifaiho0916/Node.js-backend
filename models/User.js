@@ -19,7 +19,19 @@ const User = db.define('users', {
   role: {
     type: DataTypes.STRING
   },
+  location: {
+    type: DataTypes.STRING
+  },
+  factory: {
+    type: DataTypes.STRING
+  },
   approved: {
+    type: DataTypes.BOOLEAN
+  },
+  admin: {
+    type: DataTypes.BOOLEAN
+  },
+  restrict: {
     type: DataTypes.BOOLEAN
   }
 })

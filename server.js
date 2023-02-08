@@ -5,13 +5,16 @@ const cors = require('cors')
 const db = require('./config/database.js')
 const router = require("./routes/index.js")
 
+const port = process.env.PORT || 8000
+
 dotenv.config({path: __dirname + '/.env'});
 
 const app = express()
 
-app.use(cors({ credentials: true, origin: "http://localhost:3000" }))
+app.use(express.static('client'));
+app.use(cors({ credentials: true, origin: "http://ameritexpdtk.com" }))
 app.use(cookieParser())
 app.use(express.json())
 app.use(router)
 
-app.listen(8000, () => { console.log("server running at port 8000") })
+app.listen(port, () => { console.log(`server running at port ${port}`) })
