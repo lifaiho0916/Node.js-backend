@@ -12,7 +12,7 @@ dotenv.config({path: __dirname + '/.env'});
 const app = express()
 
 app.use(express.static('client'));
-app.use(cors({ credentials: true, origin: "http://ameritexpdtk.com" }))
+app.use(cors({ credentials: true, origin: ["http://ameritexpdtk.com", "http://localhost:3000"] }))
 app.use(cookieParser())
 app.use(express.json())
 app.use(router)
