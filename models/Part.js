@@ -13,6 +13,8 @@ const partSchema = new Schema({
   cageWeightScrap: Number,
   caseWeightActuals: Number,
   preview: String
+}, {
+  timestamps: true
 })
 
 const Part = mongoose.model("Parts", partSchema)

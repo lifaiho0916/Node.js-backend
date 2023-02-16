@@ -3,13 +3,15 @@ const Schema = mongoose.Schema
 
 const machineSchema = new Schema({
   city: String,
-  facotry: String,
+  factory: String,
   name: String,
   details: String,
   preview: String,
   weight: Number,
   productionTime: Number,
   preview: String
+}, {
+  timestamps: true
 })
 
 const Machine = mongoose.model("Machines", machineSchema)

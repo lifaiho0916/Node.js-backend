@@ -32,11 +32,16 @@ const uploadPartPreview = multer({
   storage: partStorage,
 });
 
-const { createMachine, createPart, getProducts } = require("../controllers/machine")
+const { createMachine, createPart, createTimer, getProducts, deleteProduct, editProduct, startTimer, endTimer } = require("../controllers/machine")
 const { verifyToken } = require("../middleware/verifyToken")
 
 router.post("/create-machine", [verifyToken, uploadMachinePreview.single("preview")], createMachine)
 router.post("/create-part", [verifyToken, uploadPartPreview.single("preview")], createPart)
 router.post("/get-products", verifyToken, getProducts)
+router.delete("/delete-product", verifyToken, deleteProduct)
+router.post("/edit-product", verifyToken, editProduct)
+router.post("/create-timer", verifyToken, createTimer)
+router.post("/start-timer", verifyToken, startTimer)
+router.post("/end-timer", verifyToken, endTimer)
 
 module.exports = router
