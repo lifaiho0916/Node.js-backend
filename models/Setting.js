@@ -1,8 +1,12 @@
-const mongoose = require("mongoose")
-const Schema = mongoose.Schema
+const Sequelize = require("sequelize")
+const db = require("../config/database.js")
 
-const settingSchema = new Schema ({
-  time: Number
+const { DataTypes } = Sequelize.Sequelize
+
+const Setting = db.define('setting', {
+  time: {
+    type: DataTypes.BIGINT
+  },
 })
 
-module.exports = mongoose.model("Setting", settingSchema)
+module.exports = Setting

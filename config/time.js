@@ -1,14 +1,9 @@
 const Setting = require("../models/Setting")
 
 const startTimer = async () => {
-
-  const [setting] = await Setting.find({})
-
-  global.remaining = setting.time
+  global.remaining = 2073600
   setInterval(() => {
     global.remaining--
-    setting.time = global.remaining
-    setting.save()
   }, 1000)
 }
 

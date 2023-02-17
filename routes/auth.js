@@ -13,6 +13,6 @@ router.get("/all-users", verifyToken, allUsers)
 router.post("/approve-user", approveUser)
 router.post("/update-user", verifyToken, updateUser)
 router.get("/remaining-time", remainingTime)
-router.post("/upload-avatar", verifyToken, uploadAvatar)
+router.post("/upload-avatar", uploadAvatar)
 
 module.exports = router
