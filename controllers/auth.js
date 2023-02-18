@@ -3,6 +3,9 @@ const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 const { Op } = require("sequelize");
 const Setting = require("../models/Setting.js");
+const { upload } = require("../config/multer")
+const path = require('path')
+const fs = require('fs')
 
 const register = async (req, res) => {
   const { username, email, password, confirmPassword, role, location } = req.body
@@ -39,14 +42,10 @@ const register = async (req, res) => {
 } 
 
 const login = async(req, res) => {
-  console.log(req.body)
   try {
-    const user = await User.findAll({
-      where: {
-        email: req.body.email
-      },
+    const user = await User.find({
+      email: req.body.email
     });
-
     const match = await bcrypt.compare(req.body.password, user[0].password)
     if (!match) return res.status(400).json({msg: "Wrong Password"});
     if (!user[0].approved) return res.status(403).json({msg: "Your account is under review"})
@@ -66,6 +65,7 @@ const login = async(req, res) => {
 
     return res.json({ accessToken, refreshToken })
   } catch (err) {
+    console.log(err)
     res.status(404).json({ msg: "Email not found", err })
   }
 }
@@ -195,4 +195,10 @@ const remainingTime = async(req, res) => {
   res.json({ time: global.remaining })
 }
 
-module.exports = { login, logout, register, allUsers, allUsers, approveUser, updateUser, remainingTime }
+const uploadAvatar = async (req, res) => {
+  upload(req, res, (err) => {
+    res.sendStatus(200)
+  })
+}
+
+module.exports = { login, logout, register, allUsers, allUsers, approveUser, updateUser, remainingTime, uploadAvatar }
