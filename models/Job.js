@@ -3,7 +3,7 @@ const Schema = mongoose.Schema
 
 const jobSchema = new Schema({
   city: String,
-  facotry: String,
+  factory: String,
   name: String,
   machine: {
     type: Schema.Types.ObjectId,
@@ -18,6 +18,10 @@ const jobSchema = new Schema({
     ref: "Users"
   },
   count: Number,
+  producedCount:{
+    type: Number,
+    default: 0
+  },
   dueDate: Date,
   optional: ""
 }, {

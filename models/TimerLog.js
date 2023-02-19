@@ -9,7 +9,17 @@ const timerLogSchema = new Schema({
   startTime: Date,
   endTime: Date,
   weight: Number,
-  productionTime: Number
+  productionTime: Number,
+  times: [
+    {
+      startTime: {
+        type: Date
+      },
+      endTime: {
+        type: Date
+      }
+    }
+  ]
 }, {
   timestamps: true
 })

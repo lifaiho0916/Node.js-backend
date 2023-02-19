@@ -1,7 +1,7 @@
 const { uploadPartPreview, uploadMachinePreview } = require('../config/multer')
 const Machine = require('../models/Machine')
 const Part = require('../models/Part')
-const { getModel } = require('../helpers/functions')
+const { getModel, getCurrentTime } = require('../helpers/functions')
 const Timer = require('../models/Timer')
 const TimerLog = require('../models/TimerLog')
 
@@ -45,6 +45,7 @@ const createTimer = async (req, res) => {
       totalTime: 0
     }})
   } catch(err) {
+    console.log(err)
     res.sendStatus(500)
   }
 }
@@ -113,12 +114,13 @@ const editProduct = async (req, res) => {
 const startTimer = async (req, res) => {
   try {
     const timer = await Timer.findOne({ _id: req.body.id })
+    const time = new Date(req.body.time)
     if (timer.status == "Pending") {
       const length = timer.times.length
       timer.times = [
         ...timer.times,
         {
-          startTime: new Date(),
+          startTime: time,
           endTime: undefined
         }
       ]
@@ -134,31 +136,37 @@ const startTimer = async (req, res) => {
 const endTimer = async (req, res) => {
   try {
     const timer = await Timer.findOne({ _id: req.body.id })
+    const now = new Date(req.body.time)
 
+    if (timer.status == "Started")
+      await stopTimerHandler(timer, req.body.time)
+    
     const timerLog = new TimerLog({
       timer,
       startTime: timer.times[0].startTime,
-      endTime: new Date(),
+      endTime: now,
       productionTime: timer.productionTime,
-      weight: timer.productionTime
+      weight: timer.productionTime,
+      times: timer.times
     })
     await timerLog.save()
 
-    if (timer.status == "Started")
-      await stopTimerHandler(timer)
-    timer.endTime = new Date()
-    timer.status = "Ended"
+    timer.endTime = now
+    timer.status = "Pending"
+    timer.times = []
     await timer.save()
+    
     res.sendStatus(200)
   } catch(err) {
+    console.log(err)
     res.sendStatus(500)
   }
 }
 
-const stopTimerHandler = async (timer) => {
+const stopTimerHandler = async (timer, time) => {
   if (timer.status == "Started") {
     const length = timer.times.length
-    timer.times[length - 1].endTime = new Date()
+    timer.times[length - 1].endTime = time
     timer.status = "Pending"
     await timer.save()
   }
@@ -167,11 +175,25 @@ const stopTimerHandler = async (timer) => {
 const stopTimer = async (req, res) => {
   try {
     const timer = await Timer.findOne({ _id: req.body.id })
-    await stopTimerHandler(timer)
+    const time = new Date(req.body.time)
+    await stopTimerHandler(timer, time)
     res.sendStatus(200)
   } catch (err) {
     res.sendStatus(500)
   }
 }
 
-module.exports = { createMachine, createPart, createTimer, getProducts, editProduct, deleteProduct, startTimer, endTimer, stopTimer }
+const updateTimer = async (req, res) => {
+  try {
+    await Timer.findOneAndUpdate({
+      _id: req.body.id
+    }, {
+      ...req.body.updates
+    })
+    res.sendStatus(200)
+  } catch (err) {
+    res.sendStatus(500)
+  }
+}
+
+module.exports = { createMachine, createPart, createTimer, getProducts, editProduct, deleteProduct, startTimer, endTimer, stopTimer, updateTimer }

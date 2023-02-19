@@ -7,6 +7,7 @@ const timer = require("./config/time.js")
 const path = require('path')
 const mongoose = require('mongoose')
 const { readPartFile, readMachineFile, readTimerFile } = require('./convertdb/index.js')
+const { getCurrentTime } = require('./helpers/functions.js')
 
 dotenv.config({path: __dirname + '/.env'});
 
@@ -28,5 +29,6 @@ app.use(router)
 // readPartFile()
 // readMachineFile()
 // readTimerFile()
+console.log(getCurrentTime())
 
 app.listen(port, () => { console.log(`server running at port ${port}`) })
