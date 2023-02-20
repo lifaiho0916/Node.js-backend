@@ -21,4 +21,12 @@ const getCurrentTime = () => {
   return new Date()
 }
 
-module.exports = { random, getModel, getCurrentTime }
+const getPeriodOfTimer = (times) => {
+  let total = 0
+  times.forEach(time => {
+    total += ((new Date(time.endTime).getTime() - new Date(time.startTime).getTime()) / 1000)
+  })
+  return total
+}
+
+module.exports = { random, getModel, getCurrentTime, getPeriodOfTimer }

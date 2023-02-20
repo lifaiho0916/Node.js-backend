@@ -3,7 +3,7 @@ const Schema = mongoose.Schema
 
 const timerSchema = new Schema({
   city: String,
-  facotry: String,
+  factory: String,
   name: String,
   machine: {
     type: Schema.Types.ObjectId,

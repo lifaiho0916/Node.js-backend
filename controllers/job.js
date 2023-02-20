@@ -1,4 +1,4 @@
-const Job = require("../models/job")
+const Job = require("../models/Job")
 
 const createJob = async (req, res) => {
   try {
@@ -23,4 +23,30 @@ const getJobs = async (req, res) => {
   }
 }
 
-module.exports = { createJob, getJobs }
+const updateJob = async (req, res) => {
+  try {
+    const job = await Job.findOneAndUpdate({
+      _id: req.body.id
+    }, {
+      ...req.body.update
+    }, {
+      new: true
+    }).populate("machine").populate("user").populate("part")
+    res.send({ job })
+  } catch(err) {
+    res.sendStatus(500)
+  }
+}
+
+const deleteJob = async (req, res) => {
+  try {
+    await Job.findOneAndDelete({
+      _id: req.body.id
+    })
+    res.sendStatus(200)
+  } catch(err) {
+    res.sendStatus(500)
+  }
+}
+
+module.exports = { createJob, getJobs, updateJob, deleteJob }

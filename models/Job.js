@@ -23,7 +23,11 @@ const jobSchema = new Schema({
     default: 0
   },
   dueDate: Date,
-  optional: ""
+  optional: "",
+  active: {
+    type: Boolean,
+    default: false
+  }
 }, {
   timestamps: true
 })
