@@ -22,6 +22,7 @@ const jobSchema = new Schema({
     type: Number,
     default: 0
   },
+  drawingNumber: String,
   dueDate: Date,
   optional: "",
   active: {

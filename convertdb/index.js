@@ -75,6 +75,7 @@ const readJobFile = async () => {
           producedCount: parseInt(jobItem[4])||0,
           createdAt: checkTime(row[5]),
           updatedAt: checkTime(row[6]),
+          drawingNumber: jobItem[7],
           dueDate: checkTime(row[5]),
           active: jobItem[9]=="Y"?true:false
         })

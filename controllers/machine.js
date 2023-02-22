@@ -110,6 +110,48 @@ const getProducts = async(req, res) => {
   }
 }
 
+const getTimer = async (req, res) => {
+  try {
+    const timer = await Timer.findOne({ _id: req.query.id }).populate("machine").populate("part")
+
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const timerLogs = await TimerLog.find({ timer: req.query.id }).sort({createdAt: -1})
+    const logsOfDay = await TimerLog.find({ timer: timer._id, createdAt: {$gte: startOfToday} }).sort({createdAt: -1})
+    let dailyUnit = 0
+    let dailyTon = 0
+    let totalTime = 0
+    for (const log of logsOfDay) {
+      const time = getPeriodOfTimer(log.times)
+      if (log.weight)
+        dailyTon += log.weight
+      dailyUnit++
+      totalTime += time
+    }
+
+    const _timer = {
+      city: timer.city,
+      factory: timer.factory,
+      name: timer.name,
+      part: timer.part,
+      machine: timer.machine,
+      weight: timer.weight,
+      productionTime: timer.productionTime,
+      status: timer.status,
+      times: timer.times,
+      latest: timerLogs.length ? timerLogs[0].times : [],
+      _id: timer._id,
+      dailyTon,
+      dailyUnit,
+      totalTime
+    }
+    res.send({ timer: _timer })
+  } catch (err) {
+    console.log(err)
+    res.sendStatus(500)
+  }
+}
+
 const deleteProduct = async (req, res) => {
   try {
     const model = getModel(req.body.type)
@@ -149,6 +191,7 @@ const startTimer = async (req, res) => {
     }
     timer.status = "Started"
     await timer.save()
+    req.io.emit("timerUpdated", timer._id, timer.machine)
     res.sendStatus(200)
   } catch(err) {
     res.sendStatus(500)
@@ -174,6 +217,7 @@ const endTimer = async (req, res) => {
       weight: timer.productionTime,
       times: timer.times
     })
+    req.io.emit("timerUpdated", timer._id, timer.machine)
     await timerLog.save()
 
     const job = await Job.findOne({
@@ -232,4 +276,47 @@ const updateTimer = async (req, res) => {
   }
 }
 
-module.exports = { createMachine, createPart, createTimer, getProducts, editProduct, deleteProduct, startTimer, endTimer, stopTimer, updateTimer }
+const searchMachines = async (req, res) => {
+  try {
+    const machines = await Machine.find({
+      machineClass: req.query.machineClass
+    })
+    res.send({ machines })
+  } catch (err) {
+    return res.sendStatus(500)
+  }
+}
+
+const getTimerLogsOfMachine = async (req, res) => {
+
+  const ITEMS_PER_PAGE = 8
+
+  try {
+    const page = req.query.page || 1
+
+    const { machine, part, from, to } = req.query
+    let _logs = await TimerLog.find({
+      createdAt: {
+        $gte: new Date(from),
+        $lt: new Date(to)
+      },
+    }).populate("timer")
+      .populate({ path: "timer", populate: { path: "part" } })
+      .sort({ createdAt: -1 })
+      .lean()
+    const logs = _logs
+      .filter(log => log.timer.part._id == part && log.timer.machine == machine)
+      .map(log => {
+        const time = getPeriodOfTimer(log.times)
+        return {
+          ...log,
+          time
+        }
+      })
+    res.send({ logs: logs.slice(((page - 1) * ITEMS_PER_PAGE), page * ITEMS_PER_PAGE), total: logs.length })
+  } catch (err) {
+    res.sendStatus(500)
+  }
+}
+
+module.exports = { createMachine, createPart, createTimer, getProducts, editProduct, deleteProduct, startTimer, endTimer, stopTimer, updateTimer, getTimer, searchMachines, getTimerLogsOfMachine }
