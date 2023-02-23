@@ -278,11 +278,21 @@ const updateTimer = async (req, res) => {
 
 const searchMachines = async (req, res) => {
   try {
-    const machines = await Machine.find({
+    const _machines = await Machine.find({
       machineClass: req.query.machineClass
     })
+    const logs = await TimerLog.find({}).populate("timer")
+
+    let machines = []
+    for (const machine of _machines) {
+      const length = logs.filter(log => {
+        return log.timer.machine+"" == machine._id+""
+      }).length
+      if (length) machines.push(machine)
+    }
     res.send({ machines })
   } catch (err) {
+    console.log(err)
     return res.sendStatus(500)
   }
 }
@@ -304,16 +314,27 @@ const getTimerLogsOfMachine = async (req, res) => {
       .populate({ path: "timer", populate: { path: "part" } })
       .sort({ createdAt: -1 })
       .lean()
+    let totalTons = 0, totalGain = 0, totalLoss = 0, totalFloat = 0
     const logs = _logs
       .filter(log => log.timer.part._id == part && log.timer.machine == machine)
       .map(log => {
         const time = getPeriodOfTimer(log.times)
+        totalTons += log.timer.weight
+        if (log.productionTime > time) totalGain += (log.productionTime - time)
+        else totalLoss -= (log.productionTime - time)
+
         return {
           ...log,
           time
         }
       })
-    res.send({ logs: logs.slice(((page - 1) * ITEMS_PER_PAGE), page * ITEMS_PER_PAGE), total: logs.length })
+    res.send({ 
+      logs: logs.slice(((page - 1) * ITEMS_PER_PAGE), page * ITEMS_PER_PAGE), 
+      total: logs.length, 
+      totalTons,
+      totalLoss,
+      totalGain
+    })
   } catch (err) {
     res.sendStatus(500)
   }
