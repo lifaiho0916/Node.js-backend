@@ -1,18 +1,31 @@
 const { uploadPartPreview, uploadMachinePreview } = require('../config/multer')
 const Machine = require('../models/Machine')
 const Part = require('../models/Part')
-const { getModel, getCurrentTime, getPeriodOfTimer } = require('../helpers/functions')
+const { getModel, getCurrentTime, getPeriodOfTimer, paginate } = require('../helpers/functions')
 const Timer = require('../models/Timer')
 const TimerLog = require('../models/TimerLog')
 const Job = require('../models/Job')
 
 const createMachine = async (req, res) => {
   try {
-    const machine = new Machine({
-      ...req.body,
-      preview: "/uploads/machines/"+req.file.filename
-    })
-    await machine.save()
+    let machine
+    const preview = req.file ? "/uploads/machines/"+req.file.filename : ""
+
+    if (req.body.id) {
+      machine = await Machine.findOne({ _id: req.body.id })
+      Object.entries(req.body).forEach(v => {
+        machine[v[0]] = v[1]
+      })
+      machine.preview = preview ? preview : machine.pewview
+      await machine.save()
+    } else {
+      machine = new Machine({
+        ...req.body,
+        preview
+      })
+      await machine.save()
+    }
+    
     return res.send({machine})
   } catch (err) {
     console.log(err)
@@ -22,24 +35,42 @@ const createMachine = async (req, res) => {
 
 const createPart = async (req, res) => {
   try {
-    const part = new Part({
-      ...req.body,
-      preview: "/uploads/parts/"+req.file.filename
-    })
-    await part.save()
-    return res.send({part})
+    const preview = req.file?"/uploads/parts/"+req.file.filename:""
+    let part
+    if (req.body.id) {
+      part = await Part.findOne({ _id: req.body.id })
+      Object.entries(req.body).forEach(v => {
+        part[v[0]] = v[1]
+      })
+      part.preview = preview ? preview : part.pewview
+      await part.save()
+    } else {
+      part = new Part({
+        ...req.body,
+        preview
+      })
+      await part.save()
+    }
+    
+    return res.sendStatus(200)
   } catch (err) {
+    console.log(err)
     res.sendStatus(500)
   }
 }
 
 const createTimer = async (req, res) => {
   try {
-    const timer = new Timer({
-      ...req.body,
-      times: [],
-    })
-    await timer.save()
+
+    let options = {upsert: true, new: true, setDefaultsOnInsert: true};
+    const timer = await Timer.findOneAndUpdate(
+      { machine: req.body.machine },
+      {
+        ...req.body,
+        times: []
+      },
+      options
+    )
     const _timer = await Timer.findOne({ _id: timer._id }).populate("machine").populate("part").lean()
     res.send({ timer: {
       ..._timer,
@@ -59,9 +90,27 @@ const getProducts = async(req, res) => {
   try {
     const model = getModel(req.body.type)
     let products
+    let totalCount
+
+    const ITEMS_PER_PAGE = 9
+    const page = req.body.page || 1
+    const filters = req.body.filters
 
     if (req.body.type == "Timer") {
-      products = await Timer.find({}).sort({createdAt: -1}).populate("machine").populate("part").limit(20)
+      products = await Timer
+                        .find({})
+                        .sort({createdAt: -1})
+                        .populate("machine")
+                        .populate("part")
+
+      if (filters)
+        products = products.filter(p => (
+          filters.factories.includes(p.factory) && filters.city==p.city
+        ))
+      
+      totalCount = products.length
+      products = paginate(products, page, ITEMS_PER_PAGE)
+
       let _products = []
       for (product of products) {
         const now = new Date()
@@ -96,14 +145,32 @@ const getProducts = async(req, res) => {
           _id: product._id,
           dailyTon,
           dailyUnit,
-          totalTime
+          totalTime,
+          operator: product.operator
         })
       }
-      return res.send({ products: _products })
+      return res.send({ products: _products, totalCount })
     } else {
-      products = await model.find({}).sort({createdAt: -1})
+      products = await model
+        .find({})
+        .sort({createdAt: -1})
+
+      if (filters) {
+        const { factory, city, machineClass } = filters
+
+        products = products.filter(p => {
+          if (factory && p.factory != factory) return false
+          if (city && p.city != city) return false
+          if (machineClass && p.machineClass != machineClass) return false
+          return true
+        })
+      }
+
+      totalCount = products.length
+      if (page != -1)
+        products = paginate(products, page, ITEMS_PER_PAGE)
     }
-    res.send({ products })
+    res.send({ products, totalCount })
   } catch (err) {
     console.log(err)
     res.sendStatus(500)
@@ -143,7 +210,8 @@ const getTimer = async (req, res) => {
       _id: timer._id,
       dailyTon,
       dailyUnit,
-      totalTime
+      totalTime,
+      operator: timer.operator
     }
     res.send({ timer: _timer })
   } catch (err) {
@@ -177,21 +245,28 @@ const editProduct = async (req, res) => {
 
 const startTimer = async (req, res) => {
   try {
-    const timer = await Timer.findOne({ _id: req.body.id })
-    const time = new Date(req.body.time)
-    if (timer.status == "Pending") {
-      const length = timer.times.length
-      timer.times = [
-        ...timer.times,
-        {
-          startTime: time,
-          endTime: undefined
-        }
-      ]
+    let timers = [], timerIds = []
+    if (req.body.city) timers = await Timer.find({ city: req.body.city })
+    else timers = await Timer.find({ _id: req.body.id })
+
+    for (const timer of timers) {
+      const time = new Date(req.body.time)
+      if (timer.status == "Pending") {
+        const length = timer.times.length
+        timer.times = [
+          ...timer.times,
+          {
+            startTime: time,
+            endTime: undefined
+          }
+        ]
+        timer.status = "Started"
+        timerIds.push(timer._id)
+        await timer.save()
+      }
     }
-    timer.status = "Started"
-    await timer.save()
-    req.io.emit("timerUpdated", timer._id, timer.machine)
+    
+    req.io.emit("timerUpdated", timerIds)
     res.sendStatus(200)
   } catch(err) {
     res.sendStatus(500)
@@ -200,42 +275,49 @@ const startTimer = async (req, res) => {
 
 const endTimer = async (req, res) => {
   try {
-    const timer = await Timer.findOne({ _id: req.body.id })
-    const now = new Date(req.body.time)
+    let timers = [], timerIds = []
+    if (req.body.city) timers = await Timer.find({city: req.body.city})
+    else timers = await Timer.find({ _id: req.body.id })
 
-    if (timer.status == "Pending")
-      return res.sendStatus(200)
+    for (const timer of timers) {
+      const now = new Date(req.body.time)
 
-    if (timer.status == "Started")
-      await stopTimerHandler(timer, req.body.time)
-    
-    const timerLog = new TimerLog({
-      timer,
-      startTime: timer.times[0].startTime,
-      endTime: now,
-      productionTime: timer.productionTime,
-      weight: timer.productionTime,
-      times: timer.times
-    })
-    req.io.emit("timerUpdated", timer._id, timer.machine)
-    await timerLog.save()
+      if (timer.status == "Pending")
+        continue
 
-    const job = await Job.findOne({
-      part: timer.part,
-      machine: timer.machine,
-      active: true
-    })
+      if (timer.status == "Started")
+        await stopTimerHandler(timer, req.body.time)
+      
+      const timerLog = new TimerLog({
+        timer,
+        startTime: timer.times[0].startTime,
+        endTime: now,
+        productionTime: timer.productionTime,
+        weight: timer.productionTime,
+        times: timer.times,
+        part: timer.part,
+        operator: timer.operator
+      })
+      timerIds.push(timer._id)
+      await timerLog.save()
 
-    if (job) {
-      job.producedCount++
-      await job.save()
+      const job = await Job.findOne({
+        part: timer.part,
+        machine: timer.machine,
+        active: true
+      })
+
+      if (job) {
+        job.producedCount++
+        await job.save()
+      }
+
+      timer.endTime = now
+      timer.status = "Pending"
+      timer.times = []
+      await timer.save()
     }
-
-    timer.endTime = now
-    timer.status = "Pending"
-    timer.times = []
-    await timer.save()
-    
+    req.io.emit("timerUpdated", timerIds)
     res.sendStatus(200)
   } catch(err) {
     console.log(err)
@@ -305,18 +387,31 @@ const getTimerLogsOfMachine = async (req, res) => {
     const page = req.query.page || 1
 
     const { machine, part, from, to } = req.query
-    let _logs = await TimerLog.find({
-      createdAt: {
-        $gte: new Date(from),
-        $lt: new Date(to)
-      },
-    }).populate("timer")
-      .populate({ path: "timer", populate: { path: "part" } })
-      .sort({ createdAt: -1 })
-      .lean()
+    let _logs
+    if (from && to)
+      _logs = await TimerLog.find({
+        createdAt: {
+          $gte: new Date(from),
+          $lt: new Date(to)
+        },
+      }).populate("timer")
+        .populate({ path: "timer", populate: { path: "part" } })
+        .sort({ createdAt: -1 })
+        .lean()
+    else
+      _logs = await TimerLog.find({
+        machine
+      }).populate("timer")
+        .populate({ path: "timer", populate: { path: "part" } })
+        .sort({ createdAt: -1 })
+        .lean()
     let totalTons = 0, totalGain = 0, totalLoss = 0, totalFloat = 0
     const logs = _logs
-      .filter(log => log.timer.part._id == part && log.timer.machine == machine)
+      .filter(log => {
+        if (part && log.timer.part._id != part) return false
+        if (machine && log.timer.machine != machine) return false
+        return true
+      })
       .map(log => {
         const time = getPeriodOfTimer(log.times)
         totalTons += log.timer.weight
@@ -336,6 +431,7 @@ const getTimerLogsOfMachine = async (req, res) => {
       totalGain
     })
   } catch (err) {
+    console.log(err)
     res.sendStatus(500)
   }
 }
