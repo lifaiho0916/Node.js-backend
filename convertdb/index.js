@@ -7,6 +7,7 @@ const { factories, cities, status } = require("../config/globals")
 const readExcel = require('read-excel-file/node')
 const { getXlsxStream } = require("xlstream");
 const Job = require("../models/Job")
+const TimerLog = require("../models/TimerLog")
 
 const checkIfNull = (v) => {
   return v=="NULL"?undefined:v;
@@ -40,51 +41,51 @@ const readPartFile = async () => {
 }
 
 const readJobFile = async () => {
-  await Job.deleteMany({})
+  // await Job.deleteMany({})
 
-  const jobItems = await readExcel("./convertdb/job-items.xlsx")
-  const parts = await readExcel("./convertdb/parts.xlsx")
-  const machines = await readExcel("./convertdb/machines.xlsx")
+  // const jobItems = await readExcel("./convertdb/job-items.xlsx")
+  // const parts = await readExcel("./convertdb/parts.xlsx")
+  // const machines = await readExcel("./convertdb/machines.xlsx")
 
-  readExcel("./convertdb/jobs.xlsx").then(async (data) => {
-    for (row of data) {
-      if (row[0] == "id") continue
-      const machineIndex = machines.findIndex((m, index) => m[0] == row[7])
-      let machine = undefined
-      if (machineIndex != -1)
-        machine = await Machine.findOne({ name: machines[machineIndex][2] })
+  // readExcel("./convertdb/jobs.xlsx").then(async (data) => {
+  //   for (row of data) {
+  //     if (row[0] == "id") continue
+  //     const machineIndex = machines.findIndex((m, index) => m[0] == row[7])
+  //     let machine = undefined
+  //     if (machineIndex != -1)
+  //       machine = await Machine.findOne({ name: machines[machineIndex][2] })
 
-      let _jobItems = jobItems.filter(j => row[0] == j[1])
-      if (!_jobItems) _jobItems = undefined
+  //     let _jobItems = jobItems.filter(j => row[0] == j[1])
+  //     if (!_jobItems) _jobItems = undefined
 
-      for(const jobItem of _jobItems) {
+  //     for(const jobItem of _jobItems) {
 
-        const partIndex = parts.findIndex(p => p[0] == jobItem[2])
-        let part = undefined
-        if (partIndex != -1) part = await Part.findOne({ name: parts[partIndex][1] })
+  //       const partIndex = parts.findIndex(p => p[0] == jobItem[2])
+  //       let part = undefined
+  //       if (partIndex != -1) part = await Part.findOne({ name: parts[partIndex][1] })
 
-        if (!part || !machine || jobItem[3] == "NULL" || jobItem[3] == "NULL")
-          continue
-        const job = new Job({
-          name: row[1],
-          city: cities[parseInt(row[3]) - 1],
-          factory: machine ? machine.factory : "",
-          machine: machine,
-          part: part,
-          user: undefined,
-          count: parseInt(jobItem[3])||0,
-          producedCount: parseInt(jobItem[4])||0,
-          createdAt: checkTime(row[5]),
-          updatedAt: checkTime(row[6]),
-          drawingNumber: jobItem[7],
-          dueDate: checkTime(row[5]),
-          active: jobItem[9]=="Y"?true:false
-        })
-        await job.save()
-      }
+  //       if (!part || !machine || jobItem[3] == "NULL" || jobItem[3] == "NULL")
+  //         continue
+  //       const job = new Job({
+  //         name: row[1],
+  //         city: cities[parseInt(row[3]) - 1],
+  //         factory: machine ? machine.factory : "",
+  //         machine: machine,
+  //         part: part,
+  //         user: undefined,
+  //         count: parseInt(jobItem[3])||0,
+  //         producedCount: parseInt(jobItem[4])||0,
+  //         createdAt: checkTime(row[5]),
+  //         updatedAt: checkTime(row[6]),
+  //         drawingNumber: jobItem[7],
+  //         dueDate: checkTime(row[5]),
+  //         active: jobItem[9]=="Y"?true:false
+  //       })
+  //       await job.save()
+  //     }
 
-    }
-  }).catch (err => console.log(err))
+  //   }
+  // }).catch (err => console.log(err))
 }
 
 const readMachineFile = async () => {
@@ -110,7 +111,7 @@ const readTimerFile = async () => {
   const parts = await readExcel("./convertdb/parts.xlsx")
   const machines = await readExcel("./convertdb/machines.xlsx")
 
-  await Timer.deleteMany({})
+  await TimerLog.deleteMany({})
   const stream = await getXlsxStream({
     filePath: "./convertdb/timers.xlsx",
     sheet: 0,
@@ -119,9 +120,16 @@ const readTimerFile = async () => {
     const row = data.formatted.arr
     if (row[0] == "id") return
 
-    const machine = machines[row[1]?row[1]-1:0]
-    const part = parts[row[4]?row[4]-1:0]
-    const createdTime = checkTime(row[12])
+    const machineIndex = machines.findIndex((m, index) => m[0] == row[1])
+    let machine = undefined
+    if (machineIndex != -1)
+      machine = await Machine.findOne({ name: machines[machineIndex][2] })
+
+    const partIndex = parts.findIndex((p, index) => p[0] == row[4])
+    let part = undefined
+    if (partIndex != -1)
+      part = await Part.findOne({ name: parts[partIndex][1] })
+
     const startTime = checkTime(row[5])
     const endTime = checkTime(row[6])
 
@@ -132,38 +140,32 @@ const readTimerFile = async () => {
       startTime,
       endTime
     }]
-    if (startTime2) {
+    if (startTime2 && endTime2) {
       _times.push({
         startTime: startTime2,
         endTime: endTime2
       })
     }
 
+    const timer = await Timer.findOne({ machine })
+    if (!timer || !startTime || !endTime || !part) return
+
     try {
-      const timer = new Timer({
-        machine,
+
+      const timerLog = new TimerLog({
+        timer,
         part,
-        city: machine.city,
-        facotry: machine.factory,
         weight: part.pounds,
         productionTime: part.avgTime,
-        status: status[row[3] - 1],
-        times: [
-          {
-            startTime,
-            endTime
-          },
-          {
-            startTime: startTime2,
-            endTime: endTime2
-          }
-        ],
-        createdAt: createdTime
+        operator: "",
+        times: _times,
+        createdAt: new Date(row[12]),
+        id: parseInt(row[0])
       })
   
-      await timer.save()
+      await timerLog.save()
     } catch (err) {
-      console.log(machine, row[1], row[4])
+      console.log(err)
     }
   });
 }

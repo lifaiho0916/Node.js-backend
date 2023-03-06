@@ -20,13 +20,16 @@ const io = socketIO(server, {
 
 const { readPartFile, readMachineFile, readTimerFile, readJobFile } = require('./convertdb/index.js')
 const { socketMiddleware } = require('./middleware/socket.js')
+const User = require('./models/User.js')
 
 dotenv.config({path: __dirname + '/.env'});
 
 const port = process.env.PORT || 8000
 const MONGO_URI = process.env.MONGO_URI
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to Database'))
+  .then(async() => {
+    console.log('db connected')
+  })
   .catch(err => console.log(err))
 
 timer.startTimer()

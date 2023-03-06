@@ -6,6 +6,9 @@ const Timer = require('../models/Timer')
 const TimerLog = require('../models/TimerLog')
 const Job = require('../models/Job')
 
+const moment=require("moment")
+const { startProductionLog, getStartProductionTime } = require('../models/ProductionClock')
+
 const createMachine = async (req, res) => {
   try {
     let machine
@@ -246,13 +249,20 @@ const editProduct = async (req, res) => {
 const startTimer = async (req, res) => {
   try {
     let timers = [], timerIds = []
-    if (req.body.city) timers = await Timer.find({ city: req.body.city })
-    else timers = await Timer.find({ _id: req.body.id })
+    if (req.body.city) {
+      timers = await Timer.find({ city: req.body.city })
+      startProductionLog(req.body.city)
+    }
+    else {
+      timers = await Timer.find({ _id: req.body.id })
+      console.log(timers.length)
+      if (timers.length)
+        startProductionLog(timers[0].city)
+    }
 
     for (const timer of timers) {
       const time = new Date(req.body.time)
       if (timer.status == "Pending") {
-        const length = timer.times.length
         timer.times = [
           ...timer.times,
           {
@@ -279,6 +289,9 @@ const endTimer = async (req, res) => {
     if (req.body.city) timers = await Timer.find({city: req.body.city})
     else timers = await Timer.find({ _id: req.body.id })
 
+    const lastTimer = await TimerLog.findOne({}, {}, { sort: { createdAt: -1 } }).lean()
+    let id = lastTimer.id > 900000 ? lastTimer.id : 900000
+
     for (const timer of timers) {
       const now = new Date(req.body.time)
 
@@ -293,10 +306,11 @@ const endTimer = async (req, res) => {
         startTime: timer.times[0].startTime,
         endTime: now,
         productionTime: timer.productionTime,
-        weight: timer.productionTime,
+        weight: timer.weight,
         times: timer.times,
         part: timer.part,
-        operator: timer.operator
+        operator: timer.operator,
+        id: ++id
       })
       timerIds.push(timer._id)
       await timerLog.save()
@@ -381,35 +395,44 @@ const searchMachines = async (req, res) => {
 
 const getTimerLogsOfMachine = async (req, res) => {
 
-  const ITEMS_PER_PAGE = 8
+  const ITEMS_PER_PAGE = req.query.items_per_page || 8
+  const today = moment().startOf('day')
 
   try {
     const page = req.query.page || 1
+    const includeOperator = req.query.includeOperator=="true"
 
-    const { machine, part, from, to } = req.query
+    let { machine, part, from, to, machineClass, city } = req.query
     let _logs
-    if (from && to)
-      _logs = await TimerLog.find({
-        createdAt: {
-          $gte: new Date(from),
-          $lt: new Date(to)
-        },
-      }).populate("timer")
-        .populate({ path: "timer", populate: { path: "part" } })
-        .sort({ createdAt: -1 })
-        .lean()
-    else
-      _logs = await TimerLog.find({
-        machine
-      }).populate("timer")
-        .populate({ path: "timer", populate: { path: "part" } })
-        .sort({ createdAt: -1 })
-        .lean()
+
+    if (machine == "0") machine = null
+    if (part == "0") part = null
+    if (machineClass == "0") machineClass = null
+    if (city == "0") city = null
+    if (!from) from = today.toDate()
+    if (!to) to = moment(today).endOf('day').toDate()
+    _logs = await TimerLog.find({
+      createdAt: {
+        $gte: new Date(from),
+        $lt: new Date(to)
+      },
+    }).populate("timer")
+      .populate("part")
+      .populate({
+        path: "timer",
+        populate: {
+          path: "machine"
+        }
+      })
+      .sort({ createdAt: -1 })
+      .lean()
     let totalTons = 0, totalGain = 0, totalLoss = 0, totalFloat = 0
-    const logs = _logs
+    let logs = _logs
       .filter(log => {
         if (part && log.timer.part._id != part) return false
-        if (machine && log.timer.machine != machine) return false
+        if (machine && log.timer.machine._id != machine) return false
+        if (machineClass && log.timer.machine.machineClass != machineClass) return false
+        if (city && log.timer.city != city) return false
         return true
       })
       .map(log => {
@@ -420,15 +443,19 @@ const getTimerLogsOfMachine = async (req, res) => {
 
         return {
           ...log,
-          time
+          time,
+          operator: includeOperator ? log.operator : ""
         }
       })
+    const totalPage = Math.ceil(logs.length / ITEMS_PER_PAGE)
+    logs = paginate(logs, 1, ITEMS_PER_PAGE)
     res.send({ 
-      logs: logs.slice(((page - 1) * ITEMS_PER_PAGE), page * ITEMS_PER_PAGE), 
+      logs, 
       total: logs.length, 
+      totalPage,
       totalTons,
-      totalLoss,
-      totalGain
+      totalLoss: totalLoss / logs.length,
+      totalGain: totalGain / logs.length
     })
   } catch (err) {
     console.log(err)
@@ -436,4 +463,93 @@ const getTimerLogsOfMachine = async (req, res) => {
   }
 }
 
-module.exports = { createMachine, createPart, createTimer, getProducts, editProduct, deleteProduct, startTimer, endTimer, stopTimer, updateTimer, getTimer, searchMachines, getTimerLogsOfMachine }
+const getLogsToPrint = async (req, res) => {
+
+  const ITEMS_PER_PAGE = req.query.items_per_page || 8
+  const today = moment().startOf('day')
+
+  try {
+    const page = req.query.page || 1
+    const includeOperator = req.query.includeOperator=="true"
+
+    let { machine, part, from, to, machineClass, city } = req.query
+    let _logs
+    _logs = await TimerLog.find({
+      createdAt: {
+        $gte: new Date(from),
+        $lt: new Date(to)
+      },
+    }).populate("timer")
+      .populate("part")
+      .populate({
+        path: "timer",
+        populate: {
+          path: "machine"
+        }
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+    let totalTons = 0, totalGain = 0, totalLoss = 0, totalFloat = 0
+    let logs = _logs
+      .filter(log => {
+        if (machineClass && log.timer.machine.machineClass != machineClass) return false
+        if (city && log.timer.city != city) return false
+        return true
+      })
+      .map(log => {
+        const time = getPeriodOfTimer(log.times)
+        totalTons += log.timer.weight
+        if (log.productionTime > time) totalGain += (log.productionTime - time)
+        else totalLoss -= (log.productionTime - time)
+
+        return {
+          startTime: log.times[0].startTime,
+          id: log.id,
+          part: log.part.name,
+          machine: log.timer.machine.name,
+          time,
+          operator: includeOperator ? log.operator : ""
+        }
+      })
+    const totalPage = Math.ceil(logs.length / ITEMS_PER_PAGE)
+    logs = paginate(logs, page, ITEMS_PER_PAGE)
+    res.send({ 
+      logs, 
+      total: logs.length, 
+      totalPage,
+      totalTons,
+      totalLoss: totalLoss / logs.length,
+      totalGain: totalGain / logs.length
+    })
+  } catch (err) {
+    console.log(err)
+    res.sendStatus(500)
+  }
+}
+
+const getStartOfProductionTime = async (req, res) => {
+  try {
+    const log = await getStartProductionTime(req.query.city)
+    res.send({ log })
+  } catch (err) {
+    console.log(err)
+  }
+}
+
+module.exports = { 
+  createMachine, 
+  createPart, 
+  createTimer, 
+  getProducts, 
+  editProduct, 
+  deleteProduct, 
+  startTimer, 
+  endTimer, 
+  stopTimer, 
+  updateTimer, 
+  getTimer, 
+  searchMachines, 
+  getTimerLogsOfMachine,
+  getStartOfProductionTime,
+  getLogsToPrint
+}
